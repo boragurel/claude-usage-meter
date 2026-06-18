@@ -23,6 +23,7 @@ TRUST_WAIT  = 6                    # after confirming trust, REPL appears
 RENDER_TIMEOUT = 8.0               # max wait for /usage panel to paint
 # LOG_FILE imported from paths
 CREATE_NO_WINDOW = 0x08000000      # hide wsl.exe console windows under pythonw
+EXIT_DEPS_MISSING = 10              # exit code: required dependency not found
 # -------------------------------------------------------------------------
 
 LABELS = {"Current session": "session",
@@ -144,8 +145,35 @@ def write_state(status, data):
         if os.path.exists(tmp):
             os.remove(tmp)
 
+# ---- preflight -----------------------------------------------------------
+def preflight():
+    """Check WSL and Claude Code are available. Exit cleanly if not."""
+    try:
+        p = subprocess.run(
+            ["wsl.exe", "-d", DISTRO, "--", "echo", "ok"],
+            capture_output=True, timeout=10,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        if p.returncode != 0:
+            print(f"WSL distro '{DISTRO}' not available -- usage polling disabled")
+            sys.exit(EXIT_DEPS_MISSING)
+    except FileNotFoundError:
+        print("WSL not installed -- usage polling disabled")
+        sys.exit(EXIT_DEPS_MISSING)
+
+    claude_check = subprocess.run(
+        ["wsl.exe", "-d", DISTRO, "--", "bash", "-lic", "which claude"],
+        capture_output=True, timeout=10,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    if claude_check.returncode != 0:
+        print("Claude Code not found in WSL -- usage polling disabled")
+        sys.exit(EXIT_DEPS_MISSING)
+
+
 # ---- main loop ----------------------------------------------------------
 def main():
+    preflight()
     log(f"poller starting, writing to {USAGE_FILE}")
     last_good = {}                          # carried forward on failures
     while True:

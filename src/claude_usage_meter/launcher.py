@@ -45,6 +45,7 @@ def main():
 
     procs = {}
     restart_times = {name: [] for name in components}
+    disabled = set()
 
     for name, module in components.items():
         procs[name] = launch(name, module)
@@ -53,10 +54,18 @@ def main():
         while True:
             time.sleep(1.0)
             for name, module in components.items():
+                if name in disabled:
+                    continue
                 proc = procs[name]
                 ret = proc.poll()
                 if ret is not None:
                     print(f"  [{name}] exited (code {ret})")
+
+                    # Exit code 10 = missing dependency, don't restart
+                    if ret == 10:
+                        print(f"  [{name}] dependency missing, will not restart")
+                        disabled.add(name)
+                        continue
 
                     # Track rapid restarts
                     now = time.time()
@@ -68,6 +77,7 @@ def main():
                     if len(times) >= MAX_RAPID_RESTARTS:
                         print(f"  [{name}] died {MAX_RAPID_RESTARTS} times "
                               f"in {RAPID_WINDOW}s, not restarting")
+                        disabled.add(name)
                         continue
 
                     time.sleep(RESTART_DELAY)
