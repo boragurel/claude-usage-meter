@@ -1,0 +1,31 @@
+# Runtime data (written by producers, not source)
+activity.json
+usage.json
+poller.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Editable install metadata
+src/*.egg-info/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# The old ccstats clone (sprite data is now in src/claude_usage_meter/sprites/)
+ccstats/
+
+# Project development notes (local only)
+project-reference.md
+session-log.md

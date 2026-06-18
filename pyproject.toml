@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-usage-meter"
+version = "0.1.0"
+description = "Desktop activity monitor and usage meter for Claude Desktop"
+requires-python = ">=3.13"
+license = "GPL-2.0-only"
+dependencies = [
+    "comtypes>=1.4.1",
+]
+
+[project.scripts]
+claude-meter = "claude_usage_meter.launcher:main"
