@@ -23,7 +23,7 @@ States:
 Requires: comtypes. Run under Python 3.13: py -3.13 claude-activity-indicator.py
 """
 
-import ctypes, os, sys, time, json, tempfile
+import ctypes, os, sys, time, json, tempfile, sqlite3
 from ctypes import wintypes
 from datetime import datetime, timezone
 
@@ -32,7 +32,7 @@ comtypes.client.GetModule("UIAutomationCore.dll")
 import comtypes.gen.UIAutomationClient as UIA
 
 # ---- config -------------------------------------------------------------
-from claude_usage_meter.paths import DATA_DIR, ACTIVITY_FILE
+from claude_usage_meter.paths import DATA_DIR, ACTIVITY_FILE, LEDGER_DB
 POLL       = 0.2     # seconds between probes
 HEARTBEAT  = 5.0     # force a write at least this often, even if unchanged
 STREAM_LINGER    = 1.0   # hold STREAMING this long after reply text last grew
@@ -292,6 +292,30 @@ class ActivityMonitor:
             return "UNKNOWN", ""
 
 
+def init_transitions_db():
+    conn = sqlite3.connect(LEDGER_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS state_transitions (
+            ts      TEXT NOT NULL,
+            state   TEXT NOT NULL,
+            model   TEXT
+        )
+    """)
+    conn.commit()
+    return conn
+
+def record_transition(conn, state, model):
+    try:
+        conn.execute(
+            "INSERT INTO state_transitions VALUES (?, ?, ?)",
+            (datetime.now(timezone.utc).astimezone().isoformat(),
+             state, model),
+        )
+        conn.commit()
+    except Exception as e:
+        log(f"db write failed: {e}")
+
+
 def write_state(state, model):
     payload = {"updated": datetime.now(timezone.utc).astimezone().isoformat(),
                "state": state, "model": model}
@@ -324,6 +348,7 @@ def main():
         log("waiting for Claude accessibility tree to build...")
         time.sleep(delay)
     log(f"connected, writing {ACTIVITY_FILE}")
+    db = init_transitions_db()
 
     last_state = None
     last_write = 0.0
@@ -335,6 +360,7 @@ def main():
                 write_state(state, model)
                 last_write = now
                 if state != last_state:
+                    record_transition(db, state, model)
                     log(state + (f"   {model}" if model else ""))
                     last_state = state
             time.sleep(max(0.01, POLL - (time.monotonic() - now)))

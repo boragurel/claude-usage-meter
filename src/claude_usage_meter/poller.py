@@ -10,13 +10,13 @@ official CLI, so the request leaves Anthropic's own client. No token is read,
 extracted, or sent by this script.
 """
 
-import subprocess, time, re, json, os, sys, random, tempfile
+import subprocess, time, re, json, os, sys, random, tempfile, sqlite3
 from datetime import datetime, timezone
 
 # ---- config -------------------------------------------------------------
 DISTRO   = "Ubuntu"
 SESSION  = "usagecap"
-from claude_usage_meter.paths import DATA_DIR, USAGE_FILE, LOG_FILE
+from claude_usage_meter.paths import DATA_DIR, USAGE_FILE, LOG_FILE, LEDGER_DB
 POLL_MIN, POLL_MAX = 180, 300      # seconds; randomised each cycle
 LAUNCH_WAIT = 9                    # CLI start-up before trust prompt
 TRUST_WAIT  = 6                    # after confirming trust, REPL appears
@@ -124,6 +124,33 @@ def poll_once():
         return "auth", parsed
     return "render_timeout", parsed
 
+# ---- persistence --------------------------------------------------------
+def init_db():
+    conn = sqlite3.connect(LEDGER_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usage_readings (
+            ts                TEXT NOT NULL,
+            session_pct       INTEGER,
+            weekly_all_pct    INTEGER,
+            weekly_sonnet_pct INTEGER
+        )
+    """)
+    conn.commit()
+    return conn
+
+def record_reading(conn, data):
+    try:
+        conn.execute(
+            "INSERT INTO usage_readings VALUES (?, ?, ?, ?)",
+            (datetime.now(timezone.utc).astimezone().isoformat(),
+             data.get("session", {}).get("pct"),
+             data.get("weekly_all", {}).get("pct"),
+             data.get("weekly_sonnet", {}).get("pct")),
+        )
+        conn.commit()
+    except Exception as e:
+        log(f"db write failed: {e}")
+
 # ---- output -------------------------------------------------------------
 def write_state(status, data):
     payload = {"updated": datetime.now(timezone.utc).astimezone().isoformat(),
@@ -175,6 +202,7 @@ def preflight():
 def main():
     preflight()
     log(f"poller starting, writing to {USAGE_FILE}")
+    db = init_db()
     last_good = {}                          # carried forward on failures
     while True:
         try:
@@ -186,6 +214,7 @@ def main():
                 if status == "ok":
                     last_good = data
                     write_state("ok", data)
+                    record_reading(db, data)
                     log(f"ok  session={data['session']['pct']}%  "
                         f"weekly={data['weekly_all']['pct']}%")
                 else:
